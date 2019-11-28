@@ -1,8 +1,3 @@
-// Connects to an WS2812 RGB LED strip with 10 LEDS, such as
-// on an Adafruit Circuit Playground Express board.
-//
-// Replace machine.NEOPIXELS in the code below to match the pin
-// that you are using, if you have a different board.
 package main
 
 import (
