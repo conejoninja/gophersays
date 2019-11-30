@@ -25,14 +25,15 @@ const (
 
 // Game holds the pins for buttons and leds, and other game information
 type Game struct {
-	leds       [3]machine.Pin
-	buttons    [3]machine.Pin
-	tones      [3]float64
-	bzr        buzzer.Device
-	soundONOFF machine.Pin
-	sequence   [20]uint8
-	round      uint8
-	state      uint8
+	leds          [3]machine.Pin
+	buttons       [3]machine.Pin
+	buttonPressed [3]bool
+	tones         [3]float64
+	bzr           buzzer.Device
+	soundONOFF    machine.Pin
+	sequence      [20]uint8
+	round         uint8
+	state         uint8
 }
 
 func main() {
@@ -82,6 +83,7 @@ func main() {
 	for {
 		switch game.state {
 		case IDLE:
+			println("IDLE")
 			for game.state == IDLE {
 				// Check if any button is pressed
 				for i = 0; i < 3; i++ {
@@ -99,6 +101,7 @@ func main() {
 			}
 			break
 		case START_GAME:
+			println("SATRT GAME")
 			for i = 0; i < 3; i++ {
 				game.leds[i].Low()
 			}
@@ -106,42 +109,64 @@ func main() {
 			game.state = GENERATE_SEQUENCE
 			break
 		case GENERATE_SEQUENCE:
+			println("GENERATE_SEQUENCE")
 			// play existing sequence of color/sounds
+			println("Playing existing sequence")
 			if game.round > 0 {
 				for i = 0; i < game.round; i++ {
 					game.playTune(game.sequence[i])
+					println(i, game.sequence[i])
 					time.Sleep(100 * time.Millisecond)
 				}
 			}
 			// generate new step in the sequence
 			game.sequence[game.round] = uint8(rand.Intn(3))
 			game.playTune(game.sequence[game.round])
+			println("NEW SEQUENCE", game.round, game.sequence[game.round])
+			game.round++
 			time.Sleep(100 * time.Millisecond)
+			k = 0
 			game.state = PLAYER_INPUT
 			break
 		case PLAYER_INPUT:
+			println("PLAYER_INPUT")
+			for i = 0; i < 3; i++ {
+				game.buttonPressed[i] = false
+			}
 			for game.state == PLAYER_INPUT {
 				for i = 0; i < 3; i++ {
 					game.leds[i].Low()
-					if !game.buttons[i].Get() {
-						if i != game.sequence[game.round] {
+					if !game.buttons[i].Get() && !game.buttonPressed[i] {
+						game.buttonPressed[i] = true
+						println(i, k, game.sequence[k], game.round)
+						if i != game.sequence[k] {
 							game.state = GAME_OVER
 						} else {
-							game.state = GENERATE_SEQUENCE
+							game.playTune(i)
+							k++
+							if k >= game.round {
+								game.state = GENERATE_SEQUENCE
+							}
 						}
 						break
+					} else if game.buttons[i].Get() {
+						game.buttonPressed[i] = false
 					}
 				}
 				time.Sleep(100 * time.Millisecond)
 			}
 			break
 		case GAME_OVER:
+			println("GAME_OVER")
 			game.sadSound()
 			time.Sleep(3 * time.Second)
+			game.state = IDLE
 			break
 		case PLAYER_WINS:
+			println("PLAYER_WINS")
 			game.happySound()
 			time.Sleep(3 * time.Second)
+			game.state = IDLE
 			break
 		default:
 			break
