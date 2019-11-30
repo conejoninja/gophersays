@@ -23,6 +23,7 @@ const (
 	PLAYER_WINS
 )
 
+// Game holds the pins for buttons and leds, and other game information
 type Game struct {
 	leds       [3]machine.Pin
 	buttons    [3]machine.Pin
@@ -36,16 +37,21 @@ type Game struct {
 
 func main() {
 	var i uint8
+	var k uint8
 	game := Game{}
 
+	// Set up the pins for the leds
 	game.leds[RED] = machine.A1
 	game.leds[GREEN] = machine.A2
 	game.leds[BLUE] = machine.A3
 
+	// Set up the pins for the buttons
 	game.buttons[RED] = machine.A5
 	game.buttons[GREEN] = machine.A6
 	game.buttons[BLUE] = machine.A7
 
+	// Configure the LEDs pins as output, the buttons as input
+	// set the leds off
 	for i = 0; i < 3; i++ {
 		game.leds[i].Configure(machine.PinConfig{Mode: machine.PinOutput})
 		game.buttons[i].Configure(machine.PinConfig{Mode: machine.PinInput})
@@ -53,23 +59,44 @@ func main() {
 		game.leds[i].Low()
 	}
 
+	// Configure the buzzer pin with the buzzer driver
 	bzrPin := machine.A0
 	bzrPin.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	game.bzr = buzzer.New(bzrPin)
 
+	// Assign each color/button a different tone
 	game.tones[RED] = buzzer.G4
 	game.tones[GREEN] = buzzer.C4
 	game.tones[BLUE] = buzzer.E4
 
+	// Use the slide switch on the CPE to disable sound
 	game.soundONOFF = machine.D7
 	game.soundONOFF.Configure(machine.PinConfig{Mode: machine.PinInput})
 
+	// Play a happy sound
 	game.happySound()
+
+	// Start the game in IDLE mode
+	game.state = IDLE
 
 	for {
 		switch game.state {
 		case IDLE:
-			game.state = game.idle()
+			for game.state == IDLE {
+				// Check if any button is pressed
+				for i = 0; i < 3; i++ {
+					game.leds[i].Low()
+					if !game.buttons[i].Get() {
+						game.state = START_GAME
+						break
+					}
+				}
+
+				game.leds[k].High()
+				k = (k + 1) % 3
+
+				time.Sleep(500 * time.Millisecond)
+			}
 			break
 		case START_GAME:
 			for i = 0; i < 3; i++ {
@@ -87,7 +114,6 @@ func main() {
 				}
 			}
 			// generate new step in the sequence
-
 			game.sequence[game.round] = uint8(rand.Intn(3))
 			game.playTune(game.sequence[game.round])
 			time.Sleep(100 * time.Millisecond)
@@ -122,25 +148,6 @@ func main() {
 		}
 	}
 
-}
-
-func (game *Game) idle() uint8 {
-	var k uint8
-	var i uint8
-
-	for {
-		for i = 0; i < 3; i++ {
-			game.leds[i].Low()
-			if !game.buttons[i].Get() {
-				return START_GAME
-			}
-		}
-
-		game.leds[k].High()
-		k = (k + 1) % 3
-
-		time.Sleep(500 * time.Millisecond)
-	}
 }
 
 func (game *Game) happySound() {
