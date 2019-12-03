@@ -14,6 +14,7 @@ const (
 	BLUE
 )
 
+// different states of the game
 const (
 	IDLE = iota
 	START_GAME
@@ -27,19 +28,19 @@ const (
 type Game struct {
 	leds          [3]machine.Pin
 	buttons       [3]machine.Pin
-	buttonPressed [3]bool
+	buttonPressed [3]bool 
 	tones         [3]float64
 	bzr           buzzer.Device
-	soundONOFF    machine.Pin
 	sequence      [20]uint8
 	round         uint8
 	state         uint8
 }
 
 func main() {
+	game := Game{}
 	var i uint8
 	var k uint8
-	game := Game{}
+	var then time.Time
 
 	// Set up the pins for the leds
 	game.leds[RED] = machine.A1
@@ -70,12 +71,8 @@ func main() {
 	game.tones[GREEN] = buzzer.C4
 	game.tones[BLUE] = buzzer.E4
 
-	// Use the slide switch on the CPE to disable sound
-	game.soundONOFF = machine.D7
-	game.soundONOFF.Configure(machine.PinConfig{Mode: machine.PinInput})
-
-	// Play a happy sound
-	game.happySound()
+	// Play a beep-beep sound
+	game.beepBeepSound()
 
 	// Start the game in IDLE mode
 	game.state = IDLE
@@ -83,17 +80,19 @@ func main() {
 	for {
 		switch game.state {
 		case IDLE:
-			println("IDLE")
 			for game.state == IDLE {
 				// Check if any button is pressed
 				for i = 0; i < 3; i++ {
 					game.leds[i].Low()
 					if !game.buttons[i].Get() {
+						// seed the randomness
+						rand.Seed(time.Now().Unix()*int64(i) + time.Now().UnixNano()*int64(i))
 						game.state = START_GAME
 						break
 					}
 				}
 
+				// light one LED at a time
 				game.leds[k].High()
 				k = (k + 1) % 3
 
@@ -101,69 +100,73 @@ func main() {
 			}
 			break
 		case START_GAME:
-			println("SATRT GAME")
+			// turn off all the LEDs
 			for i = 0; i < 3; i++ {
 				game.leds[i].Low()
 			}
+			game.beepBeepSound()
+			time.Sleep(1 * time.Second)
 			game.round = 0
 			game.state = GENERATE_SEQUENCE
 			break
 		case GENERATE_SEQUENCE:
-			println("GENERATE_SEQUENCE")
 			// play existing sequence of color/sounds
-			println("Playing existing sequence")
 			if game.round > 0 {
 				for i = 0; i < game.round; i++ {
 					game.playTune(game.sequence[i])
-					println(i, game.sequence[i])
 					time.Sleep(100 * time.Millisecond)
 				}
 			}
 			// generate new step in the sequence
 			game.sequence[game.round] = uint8(rand.Intn(3))
 			game.playTune(game.sequence[game.round])
-			println("NEW SEQUENCE", game.round, game.sequence[game.round])
 			game.round++
 			time.Sleep(100 * time.Millisecond)
 			k = 0
 			game.state = PLAYER_INPUT
 			break
 		case PLAYER_INPUT:
-			println("PLAYER_INPUT")
 			for i = 0; i < 3; i++ {
 				game.buttonPressed[i] = false
 			}
+			then = time.Now()
+			// wait for player input
 			for game.state == PLAYER_INPUT {
 				for i = 0; i < 3; i++ {
-					game.leds[i].Low()
+					// check if button was pressed (and avoid double-click)
 					if !game.buttons[i].Get() && !game.buttonPressed[i] {
 						game.buttonPressed[i] = true
-						println(i, k, game.sequence[k], game.round)
 						if i != game.sequence[k] {
 							game.state = GAME_OVER
 						} else {
+							then = time.Now()
 							game.playTune(i)
 							k++
 							if k >= game.round {
 								game.state = GENERATE_SEQUENCE
+								time.Sleep(500 * time.Millisecond)
 							}
 						}
 						break
 					} else if game.buttons[i].Get() {
+						// reset variable to avoid multiple clicks
 						game.buttonPressed[i] = false
 					}
 				}
-				time.Sleep(100 * time.Millisecond)
+
+				// reset to IDLE if not pushing any buttons for long time
+				if time.Since(then) > 20*time.Second {
+					game.state = IDLE
+				}
+				time.Sleep(50 * time.Millisecond)
 			}
 			break
 		case GAME_OVER:
-			println("GAME_OVER")
 			game.sadSound()
 			time.Sleep(3 * time.Second)
 			game.state = IDLE
 			break
 		case PLAYER_WINS:
-			println("PLAYER_WINS")
 			game.happySound()
 			time.Sleep(3 * time.Second)
 			game.state = IDLE
@@ -175,6 +178,7 @@ func main() {
 
 }
 
+// happySound plays a happy sound
 func (game *Game) happySound() {
 	game.bzr.Tone(buzzer.G3, 0.5)
 	time.Sleep(100 * time.Millisecond)
@@ -184,6 +188,7 @@ func (game *Game) happySound() {
 	time.Sleep(100 * time.Millisecond)
 }
 
+// sadSound plays a sad sound
 func (game *Game) sadSound() {
 	game.bzr.Tone(buzzer.B4, 0.5)
 	time.Sleep(100 * time.Millisecond)
@@ -193,9 +198,18 @@ func (game *Game) sadSound() {
 	time.Sleep(100 * time.Millisecond)
 }
 
+// beepBeepSound plays a short double beep sound
+func (game *Game) beepBeepSound() {
+	game.bzr.Tone(buzzer.G4, 0.25)
+	time.Sleep(30 * time.Millisecond)
+	game.bzr.Tone(buzzer.G4, 0.25)
+	time.Sleep(30 * time.Millisecond)
+}
+
+// playTune plays the tune and lights the corresponding color
 func (game *Game) playTune(color uint8) {
 	game.leds[color].High()
 	game.bzr.Tone(game.tones[color], 0.5)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(30 * time.Millisecond)
 	game.leds[color].Low()
 }
